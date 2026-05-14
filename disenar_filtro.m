@@ -1,12 +1,12 @@
 function [b, a] = disenar_filtro(tipo, clase, Fs, orden, fc1, fc2)
 % Tipo: "IIR" o "FIR"
-% Clase: "lowpass" "highpass" "BANDPASS" "BANDSTOP"
-% fc2 solo se usa para BANDPASS y BANDSTOP
+% Clase: "lowpass" "highpass" "bandpass" "bandstop"
+% fc2 solo se usa para bandpass y bandstop
 
     Wn = fc1/(Fs/2);  %normalizar
     
-    %BANDPASS y BANDSTOP necesitan 2 frecuencias
-    if strcmp(clase,"BANDPASS") || strcmp(clase,"BANDSTOP")
+    %bandpass y bandstop necesitan 2 frecuencias
+    if strcmp(clase,"bandpass") || strcmp(clase,"bandstop")
         Wn = [fc1/(Fs/2) fc2/(Fs/2)];
     end
     
@@ -18,9 +18,9 @@ function [b, a] = disenar_filtro(tipo, clase, Fs, orden, fc1, fc2)
                     [b,a] = butter(orden, Wn, "low");
                 case "highpass"
                     [b,a] = butter(orden, Wn, "high");
-                case "BANDPASS"
-                    [b,a] = butter(orden, Wn, "BANDPASS");
-                case "BANDSTOP"
+                case "bandpass"
+                    [b,a] = butter(orden, Wn, "bandpass");
+                case "bandstop"
                     [b,a] = butter(orden, Wn, "stop");
             end
         case "FIR"
@@ -30,9 +30,9 @@ function [b, a] = disenar_filtro(tipo, clase, Fs, orden, fc1, fc2)
                     b = fir1(orden, Wn, "low");
                 case "highpass"
                     b = fir1(orden, Wn, "high");
-                case "BANDPASS"
-                    b = fir1(orden, Wn, "BANDPASS");
-                case "BANDSTOP"
+                case "bandpass"
+                    b = fir1(orden, Wn, "bandpass");
+                case "bandstop"
                     b = fir1(orden, Wn, "stop");
             end
             a = 1;
