@@ -24,6 +24,7 @@
 /* Private define ------------------------------------------------------------*/
 /* USER CODE BEGIN PD */
 #define MAX_ORDER 20
+#define MAX_SEC 10
 #define RX_BUF_SIZE 256
 #define MAX_CAPTURE 10000
 /* USER CODE END PD */
@@ -45,15 +46,14 @@ UART_HandleTypeDef huart2;
 
 /* USER CODE BEGIN PV */
 
-//Coeficientes filtro IIR
-float b_coef[MAX_ORDER + 1] = {1.0f};
-float a_coef[MAX_ORDER + 1] = {1.0f};
-int nb = 1;
-int na = 1;
+//FILTRO EN BIQUADS, CADA SECCION TIENE 6 COEFICIENTES
+float sos[MAX_SEC][6];
+int n_sec = 0;
+float ganancia = 1.0f;
 
-//Buffers ecuacion de diferencias
-float x_buf[MAX_ORDER + 1] = {0};
-float y_buf[MAX_ORDER + 1] = {0};
+//MEMORIA DE CADA BIQUAD
+float z1[MAX_SEC] = {0};
+float z2[MAX_SEC] = {0};
 
 //UART
 uint8_t rx_byte;
@@ -61,7 +61,7 @@ char rx_buffer[RX_BUF_SIZE];
 int rx_index = 0;
 volatile uint8_t linea_lista = 0;
 
-//Buffer de captura (se llena a 8000Hz y luego se manda por UART)
+//BUFFER DE CAPTURA
 uint16_t captura_buf[MAX_CAPTURE];
 
 /* USER CODE END PV */
@@ -116,48 +116,47 @@ void enviar_uart(char *msg)
 
 void limpiar_buffers_filtro(void)
 {
-    for (int i = 0; i <= MAX_ORDER; i++)
+    for (int i = 0; i < MAX_SEC; i++)
     {
-        x_buf[i] = 0.0f;
-        y_buf[i] = 0.0f;
+        z1[i] = 0.0f;
+        z2[i] = 0.0f;
     }
 }
 
-//Espera al timer TIM4 para muestrear a 8000Hz exactos
-//el timer hace overflow cada 1/8000 s, aca esperamos ese flag
+//ESPERA AL TIMER PARA MUESTREAR A 8000HZ
 void esperar_timer(void)
 {
     while (__HAL_TIM_GET_FLAG(&htim4, TIM_FLAG_UPDATE) == RESET) {}
     __HAL_TIM_CLEAR_FLAG(&htim4, TIM_FLAG_UPDATE);
 }
 
+//FILTRO IIR EN BIQUADS (SECCIONES EN CASCADA)
 float aplicar_filtro_iir(float x_nuevo)
 {
-    for (int i = MAX_ORDER; i > 0; i--)
+    //SIN FILTRO PASA DIRECTO
+    if (n_sec == 0)
     {
-        x_buf[i] = x_buf[i - 1];
-    }
-    x_buf[0] = x_nuevo;
-
-    float y_nuevo = 0.0f;
-
-    for (int k = 0; k < nb; k++)
-    {
-        y_nuevo += b_coef[k] * x_buf[k];
+        return x_nuevo;
     }
 
-    for (int k = 1; k < na; k++)
+    float x = x_nuevo * ganancia;
+
+    for (int s = 0; s < n_sec; s++)
     {
-        y_nuevo -= a_coef[k] * y_buf[k];
+        float b0 = sos[s][0];
+        float b1 = sos[s][1];
+        float b2 = sos[s][2];
+        float a1 = sos[s][4];
+        float a2 = sos[s][5];
+
+        float y = b0 * x + z1[s];
+        z1[s] = b1 * x - a1 * y + z2[s];
+        z2[s] = b2 * x - a2 * y;
+
+        x = y;  //SALIDA PASA A LA SIGUIENTE SECCION
     }
 
-    for (int i = MAX_ORDER; i > 0; i--)
-    {
-        y_buf[i] = y_buf[i - 1];
-    }
-    y_buf[0] = y_nuevo;
-
-    return y_nuevo;
+    return x;
 }
 
 uint16_t leer_adc(void)
@@ -210,18 +209,17 @@ int main(void)
   MX_USART2_UART_Init();
   /* USER CODE BEGIN 2 */
 
-  //arrancar DAC
+  //ARRANCAR DAC
   HAL_DAC_Start(&hdac, DAC_CHANNEL_1);
 
-  //reconfigurar TIM4 a modo libre (sin slave) para usarlo como reloj de muestreo
-  //Prescaler 84-1 y Period 124 dan 84MHz/84/125 = 8000Hz
-  htim4.Instance->SMCR = 0;          //quitar modo slave
+  //TIM4 EN MODO LIBRE A 8000HZ
+  htim4.Instance->SMCR = 0;
   htim4.Init.Prescaler = 84 - 1;
   htim4.Init.Period = 124;
   HAL_TIM_Base_Init(&htim4);
   HAL_TIM_Base_Start(&htim4);
 
-  //arrancar UART con interrupcion
+  //ARRANCAR UART CON INTERRUPCION
   HAL_NVIC_SetPriority(USART2_IRQn, 0, 0);
   HAL_NVIC_EnableIRQ(USART2_IRQn);
   HAL_UART_Receive_IT(&huart2, &rx_byte, 1);
@@ -240,14 +238,14 @@ int main(void)
 
     /* USER CODE BEGIN 3 */
 
-      //esperar al timer: garantiza muestreo a 8000Hz exactos
+      //ESPERAR AL TIMER (8000HZ)
       esperar_timer();
 
-      //Leer ADC
+      //LEER ADC
       uint16_t adc_val = leer_adc();
       float x_in = ((float)adc_val / 2048.0f) - 1.0f;
 
-      //Aplicar filtro
+      //APLICAR FILTRO
       float y_out = aplicar_filtro_iir(x_in);
 
       float dac_float = (y_out + 1.0f) * 2048.0f;
@@ -255,10 +253,10 @@ int main(void)
       if (dac_float > 4095.0f) { dac_float = 4095.0f; }
       uint16_t dac_val = (uint16_t)dac_float;
 
-      //Escribir al DAC
+      //ESCRIBIR AL DAC
       HAL_DAC_SetValue(&hdac, DAC_CHANNEL_1, DAC_ALIGN_12B_R, dac_val);
 
-      //Revisar el UART
+      //REVISAR UART
       if (linea_lista)
       {
           //CAPTURE N
@@ -269,17 +267,17 @@ int main(void)
 
               HAL_GPIO_WritePin(LD2_GPIO_Port, LD2_Pin, GPIO_PIN_SET);
 
-
+              //LIMPIAR FLAG ANTES DE CAPTURAR
               __HAL_TIM_CLEAR_FLAG(&htim4, TIM_FLAG_UPDATE);
 
-              //Buffer para los 8kHz
+              //LLENAR BUFFER A 8000HZ
               for (int i = 0; i < N; i++)
               {
                   esperar_timer();
                   captura_buf[i] = leer_adc();
               }
 
-              //Enviar por UART
+              //MANDAR TODO POR UART
               for (int i = 0; i < N; i++)
               {
                   sprintf(tx_buf, "%u\n", captura_buf[i]);
@@ -289,45 +287,37 @@ int main(void)
               HAL_GPIO_WritePin(LD2_GPIO_Port, LD2_Pin, GPIO_PIN_RESET);
           }
 
-          //FILTER_B N
-          else if (strncmp(rx_buffer, "FILTER_B", 8) == 0)
+          //SOS N (RECIBIR FILTRO EN BIQUADS)
+          else if (strncmp(rx_buffer, "SOS", 3) == 0)
           {
-              int n = atoi(rx_buffer + 9);
-              if (n > 0 && n <= MAX_ORDER + 1)
+              int n = atoi(rx_buffer + 4);
+              if (n > 0 && n <= MAX_SEC)
               {
-                  nb = n;
-                  for (int i = 0; i < nb; i++)
-                  {
-                      linea_lista = 0;
-                      rx_index = 0;
-                      while (!linea_lista) {}
-                      b_coef[i] = (float)atof(rx_buffer);
-                      linea_lista = 0;
-                      rx_index = 0;
-                  }
-                  limpiar_buffers_filtro();
-                  enviar_uart("B_OK\n");
-              }
-          }
+                  //RECIBIR GANANCIA
+                  linea_lista = 0;
+                  rx_index = 0;
+                  while (!linea_lista) {}
+                  ganancia = (float)atof(rx_buffer);
+                  linea_lista = 0;
+                  rx_index = 0;
 
-          //FILTER_A N
-          else if (strncmp(rx_buffer, "FILTER_A", 8) == 0)
-          {
-              int n = atoi(rx_buffer + 9);
-              if (n > 0 && n <= MAX_ORDER + 1)
-              {
-                  na = n;
-                  for (int i = 0; i < na; i++)
+                  //RECIBIR CADA SECCION (6 COEFICIENTES)
+                  for (int s = 0; s < n; s++)
                   {
-                      linea_lista = 0;
-                      rx_index = 0;
-                      while (!linea_lista) {}
-                      a_coef[i] = (float)atof(rx_buffer);
-                      linea_lista = 0;
-                      rx_index = 0;
+                      for (int j = 0; j < 6; j++)
+                      {
+                          linea_lista = 0;
+                          rx_index = 0;
+                          while (!linea_lista) {}
+                          sos[s][j] = (float)atof(rx_buffer);
+                          linea_lista = 0;
+                          rx_index = 0;
+                      }
                   }
+
+                  n_sec = n;
                   limpiar_buffers_filtro();
-                  enviar_uart("A_OK\n");
+                  enviar_uart("SOS_OK\n");
               }
           }
 
@@ -380,11 +370,24 @@ void SystemClock_Config(void)
 
 /**
   * @brief ADC1 Initialization Function
+  * @param None
+  * @retval None
   */
 static void MX_ADC1_Init(void)
 {
+
+  /* USER CODE BEGIN ADC1_Init 0 */
+
+  /* USER CODE END ADC1_Init 0 */
+
   ADC_ChannelConfTypeDef sConfig = {0};
 
+  /* USER CODE BEGIN ADC1_Init 1 */
+
+  /* USER CODE END ADC1_Init 1 */
+
+  /** Configure the global features of the ADC (Clock, Resolution, Data Alignment and number of conversion)
+  */
   hadc1.Instance = ADC1;
   hadc1.Init.ClockPrescaler = ADC_CLOCK_SYNC_PCLK_DIV4;
   hadc1.Init.Resolution = ADC_RESOLUTION_12B;
@@ -402,6 +405,8 @@ static void MX_ADC1_Init(void)
     Error_Handler();
   }
 
+  /** Configure for the selected ADC regular channel its corresponding rank in the sequencer and its sample time.
+  */
   sConfig.Channel = ADC_CHANNEL_0;
   sConfig.Rank = 1;
   sConfig.SamplingTime = ADC_SAMPLETIME_3CYCLES;
@@ -409,42 +414,75 @@ static void MX_ADC1_Init(void)
   {
     Error_Handler();
   }
+  /* USER CODE BEGIN ADC1_Init 2 */
 
-  //forzar software trigger (CubeMX lo deja con trigger de TIM4 y el ADC lee 0)
+  //FORZAR SOFTWARE TRIGGER (SINO EL ADC LEE 0)
   hadc1.Init.ExternalTrigConvEdge = ADC_EXTERNALTRIGCONVEDGE_NONE;
   hadc1.Init.ExternalTrigConv = ADC_SOFTWARE_START;
   HAL_ADC_Init(&hadc1);
+
+  /* USER CODE END ADC1_Init 2 */
+
 }
 
 /**
   * @brief DAC Initialization Function
+  * @param None
+  * @retval None
   */
 static void MX_DAC_Init(void)
 {
+
+  /* USER CODE BEGIN DAC_Init 0 */
+
+  /* USER CODE END DAC_Init 0 */
+
   DAC_ChannelConfTypeDef sConfig = {0};
 
+  /* USER CODE BEGIN DAC_Init 1 */
+
+  /* USER CODE END DAC_Init 1 */
+
+  /** DAC Initialization
+  */
   hdac.Instance = DAC;
   if (HAL_DAC_Init(&hdac) != HAL_OK)
   {
     Error_Handler();
   }
 
+  /** DAC channel OUT1 config
+  */
   sConfig.DAC_Trigger = DAC_TRIGGER_NONE;
   sConfig.DAC_OutputBuffer = DAC_OUTPUTBUFFER_ENABLE;
   if (HAL_DAC_ConfigChannel(&hdac, &sConfig, DAC_CHANNEL_1) != HAL_OK)
   {
     Error_Handler();
   }
+  /* USER CODE BEGIN DAC_Init 2 */
+
+  /* USER CODE END DAC_Init 2 */
+
 }
 
 /**
   * @brief TIM4 Initialization Function
+  * @param None
+  * @retval None
   */
 static void MX_TIM4_Init(void)
 {
+
+  /* USER CODE BEGIN TIM4_Init 0 */
+
+  /* USER CODE END TIM4_Init 0 */
+
   TIM_SlaveConfigTypeDef sSlaveConfig = {0};
   TIM_MasterConfigTypeDef sMasterConfig = {0};
 
+  /* USER CODE BEGIN TIM4_Init 1 */
+
+  /* USER CODE END TIM4_Init 1 */
   htim4.Instance = TIM4;
   htim4.Init.Prescaler = 84-1;
   htim4.Init.CounterMode = TIM_COUNTERMODE_UP;
@@ -467,13 +505,27 @@ static void MX_TIM4_Init(void)
   {
     Error_Handler();
   }
+  /* USER CODE BEGIN TIM4_Init 2 */
+
+  /* USER CODE END TIM4_Init 2 */
+
 }
 
 /**
   * @brief USART1 Initialization Function
+  * @param None
+  * @retval None
   */
 static void MX_USART1_UART_Init(void)
 {
+
+  /* USER CODE BEGIN USART1_Init 0 */
+
+  /* USER CODE END USART1_Init 0 */
+
+  /* USER CODE BEGIN USART1_Init 1 */
+
+  /* USER CODE END USART1_Init 1 */
   huart1.Instance = USART1;
   huart1.Init.BaudRate = 115200;
   huart1.Init.WordLength = UART_WORDLENGTH_8B;
@@ -486,13 +538,27 @@ static void MX_USART1_UART_Init(void)
   {
     Error_Handler();
   }
+  /* USER CODE BEGIN USART1_Init 2 */
+
+  /* USER CODE END USART1_Init 2 */
+
 }
 
 /**
   * @brief USART2 Initialization Function
+  * @param None
+  * @retval None
   */
 static void MX_USART2_UART_Init(void)
 {
+
+  /* USER CODE BEGIN USART2_Init 0 */
+
+  /* USER CODE END USART2_Init 0 */
+
+  /* USER CODE BEGIN USART2_Init 1 */
+
+  /* USER CODE END USART2_Init 1 */
   huart2.Instance = USART2;
   huart2.Init.BaudRate = 115200;
   huart2.Init.WordLength = UART_WORDLENGTH_8B;
@@ -505,47 +571,86 @@ static void MX_USART2_UART_Init(void)
   {
     Error_Handler();
   }
+  /* USER CODE BEGIN USART2_Init 2 */
+
+  /* USER CODE END USART2_Init 2 */
+
 }
 
 /**
   * @brief GPIO Initialization Function
+  * @param None
+  * @retval None
   */
 static void MX_GPIO_Init(void)
 {
   GPIO_InitTypeDef GPIO_InitStruct = {0};
+  /* USER CODE BEGIN MX_GPIO_Init_1 */
 
+  /* USER CODE END MX_GPIO_Init_1 */
+
+  /* GPIO Ports Clock Enable */
   __HAL_RCC_GPIOC_CLK_ENABLE();
   __HAL_RCC_GPIOH_CLK_ENABLE();
   __HAL_RCC_GPIOA_CLK_ENABLE();
   __HAL_RCC_GPIOB_CLK_ENABLE();
 
+  /*Configure GPIO pin Output Level */
   HAL_GPIO_WritePin(LD2_GPIO_Port, LD2_Pin, GPIO_PIN_RESET);
 
+  /*Configure GPIO pin : B1_Pin */
   GPIO_InitStruct.Pin = B1_Pin;
   GPIO_InitStruct.Mode = GPIO_MODE_IT_FALLING;
   GPIO_InitStruct.Pull = GPIO_NOPULL;
   HAL_GPIO_Init(B1_GPIO_Port, &GPIO_InitStruct);
 
+  /*Configure GPIO pin : LD2_Pin */
   GPIO_InitStruct.Pin = LD2_Pin;
   GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
   GPIO_InitStruct.Pull = GPIO_NOPULL;
   GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
   HAL_GPIO_Init(LD2_GPIO_Port, &GPIO_InitStruct);
 
+  /* EXTI interrupt init*/
   HAL_NVIC_SetPriority(EXTI15_10_IRQn, 0, 0);
   HAL_NVIC_EnableIRQ(EXTI15_10_IRQn);
+
+  /* USER CODE BEGIN MX_GPIO_Init_2 */
+
+  /* USER CODE END MX_GPIO_Init_2 */
 }
 
+/* USER CODE BEGIN 4 */
+
+/* USER CODE END 4 */
+
+/**
+  * @brief  This function is executed in case of error occurrence.
+  * @retval None
+  */
 void Error_Handler(void)
 {
+  /* USER CODE BEGIN Error_Handler_Debug */
+  /* User can add his own implementation to report the HAL error return state */
   __disable_irq();
   while (1)
   {
   }
+  /* USER CODE END Error_Handler_Debug */
 }
-
-#ifdef  USE_FULL_ASSERT
+#ifdef USE_FULL_ASSERT
+/**
+  * @brief  Reports the name of the source file and the source line number
+  *         where the assert_param error has occurred.
+  * @param  file: pointer to the source file name
+  * @param  line: assert_param error line source number
+  * @retval None
+  */
 void assert_failed(uint8_t *file, uint32_t line)
 {
+  /* USER CODE BEGIN 6 */
+  /* User can add his own implementation to report the file name and line number,
+     ex: printf("Wrong parameters value: file %s on line %d\r\n", file, line) */
+  /* USER CODE END 6 */
 }
 #endif /* USE_FULL_ASSERT */

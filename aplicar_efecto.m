@@ -1,15 +1,15 @@
 function y = aplicar_efecto(senal, Fs, tipo_efecto, parametros)
-% para "filtro": parametros.b y parametros.a
-% para "eco": parametros.delay, parametros.ganancia, parametros.repeticiones
-% para "distorsion": parametros.ganancia, parametros.umbral
+% para 'filtro': parametros.b y parametros.a
+% para 'eco': parametros.delay, parametros.ganancia, parametros.repeticiones
+% para 'distorsion': parametros.ganancia, parametros.umbral
 
     senal = senal(:);
     
     switch tipo_efecto
-        case "filtro"
+        case 'filtro'
             y = filter(parametros.b, parametros.a, senal);
             
-        case "eco"
+        case 'eco'
             % y[n] = x[n] + g*x[n-D] + g^2*x[n-2D]...
             D = round(parametros.delay * Fs);
             g = parametros.ganancia;
@@ -22,7 +22,7 @@ function y = aplicar_efecto(senal, Fs, tipo_efecto, parametros)
             end
             y = filter(b_eco, 1, senal);
             
-        case "distorsion"
+        case 'distorsion'
             % Hard clipping 
             gain = parametros.ganancia;
             umb = parametros.umbral;
