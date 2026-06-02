@@ -60,8 +60,8 @@ all: main-build
 main-build: STM_PROGRAMACION.elf secondary-outputs
 
 # Tool invocations
-STM_PROGRAMACION.elf STM_PROGRAMACION.map: $(OBJS) $(USER_OBJS) C:\Users\Bren\Documents\GitHub\PROYECTO_SE-ALES\STM_PROGRAMACION\STM32F446RETX_FLASH.ld makefile objects.list $(OPTIONAL_TOOL_DEPS)
-	arm-none-eabi-gcc -o "STM_PROGRAMACION.elf" @"objects.list" $(USER_OBJS) $(LIBS) -mcpu=cortex-m4 -T"C:\Users\Bren\Documents\GitHub\PROYECTO_SE-ALES\STM_PROGRAMACION\STM32F446RETX_FLASH.ld" --specs=nosys.specs -Wl,-Map="STM_PROGRAMACION.map" -Wl,--gc-sections -static --specs=nano.specs -mfpu=fpv4-sp-d16 -mfloat-abi=hard -mthumb -Wl,--start-group -lc -lm -Wl,--end-group
+STM_PROGRAMACION.elf STM_PROGRAMACION.map: $(OBJS) $(USER_OBJS) C:\Users\itzle\Documents\GitHub\PROYECTO_SEÑALES\STM_PROGRAMACION\STM32F446RETX_FLASH.ld makefile objects.list $(OPTIONAL_TOOL_DEPS)
+	arm-none-eabi-gcc -o "STM_PROGRAMACION.elf" @"objects.list" $(USER_OBJS) $(LIBS) -mcpu=cortex-m4 -T"C:\Users\itzle\Documents\GitHub\PROYECTO_SEÑALES\STM_PROGRAMACION\STM32F446RETX_FLASH.ld" --specs=nosys.specs -Wl,-Map="STM_PROGRAMACION.map" -Wl,--gc-sections -static --specs=nano.specs -mfpu=fpv4-sp-d16 -mfloat-abi=hard -mthumb -Wl,--start-group -lc -lm -Wl,--end-group
 	@echo 'Finished building target: $@'
 	@echo ' '
 

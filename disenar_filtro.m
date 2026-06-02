@@ -1,67 +1,67 @@
 function [b, a] = disenar_filtro(tipo, clase, Fs, orden, fc1, fc2, metodo)
     if nargin < 7
-        metodo = "butterworth";
+        metodo = 'butterworth';
     end
 
     Wn = fc1/(Fs/2);
 
-    if strcmp(clase,"bandpass") || strcmp(clase,"bandstop")
+    if strcmp(clase,'bandpass') || strcmp(clase,'bandstop')
         Wn = [fc1/(Fs/2) fc2/(Fs/2)];
     end
 
     switch upper(tipo)
-        case "IIR"
+        case 'IIR'
             switch lower(metodo)
-                case "butterworth"
+                case 'butterworth'
                     switch clase
-                        case "lowpass"
-                            [b,a] = butter(orden, Wn, "low");
-                        case "highpass"
-                            [b,a] = butter(orden, Wn, "high");
-                        case "bandpass"
-                            [b,a] = butter(orden, Wn, "bandpass");
-                        case "bandstop"
-                            [b,a] = butter(orden, Wn, "stop");
+                        case 'lowpass'
+                            [b,a] = butter(orden, Wn, 'low');
+                        case 'highpass'
+                            [b,a] = butter(orden, Wn, 'high');
+                        case 'bandpass'
+                            [b,a] = butter(orden, Wn, 'bandpass');
+                        case 'bandstop'
+                            [b,a] = butter(orden, Wn, 'stop');
                     end
-                case "chebyshev"
+                case 'chebyshev'
                     Rp = 1;
                     switch clase
-                        case "lowpass"
-                            [b,a] = cheby1(orden, Rp, Wn, "low");
-                        case "highpass"
-                            [b,a] = cheby1(orden, Rp, Wn, "high");
-                        case "bandpass"
-                            [b,a] = cheby1(orden, Rp, Wn, "bandpass");
-                        case "bandstop"
-                            [b,a] = cheby1(orden, Rp, Wn, "stop");
+                        case 'lowpass'
+                            [b,a] = cheby1(orden, Rp, Wn, 'low');
+                        case 'highpass'
+                            [b,a] = cheby1(orden, Rp, Wn, 'high');
+                        case 'bandpass'
+                            [b,a] = cheby1(orden, Rp, Wn, 'bandpass');
+                        case 'bandstop'
+                            [b,a] = cheby1(orden, Rp, Wn, 'stop');
                     end
             end
 
-        case "FIR"
+        case 'FIR'
             switch lower(metodo)
-                case "damped"
+                case 'damped'
                     switch clase
-                        case "lowpass"
-                            b = fir1(orden, Wn, "low");
-                        case "highpass"
-                            b = fir1(orden, Wn, "high");
-                        case "bandpass"
-                            b = fir1(orden, Wn, "bandpass");
-                        case "bandstop"
-                            b = fir1(orden, Wn, "stop");
+                        case 'lowpass'
+                            b = fir1(orden, Wn, 'low');
+                        case 'highpass'
+                            b = fir1(orden, Wn, 'high');
+                        case 'bandpass'
+                            b = fir1(orden, Wn, 'bandpass');
+                        case 'bandstop'
+                            b = fir1(orden, Wn, 'stop');
                     end
-                case "ls"
+                case 'ls'
                     switch clase
-                        case "lowpass"
+                        case 'lowpass'
                             f_bands = [0 Wn Wn 1];
                             a_bands = [1 1 0 0];
-                        case "highpass"
+                        case 'highpass'
                             f_bands = [0 Wn Wn 1];
                             a_bands = [0 0 1 1];
-                        case "bandpass"
+                        case 'bandpass'
                             f_bands = [0 Wn(1) Wn(1) Wn(2) Wn(2) 1];
                             a_bands = [0 0 1 1 0 0];
-                        case "bandstop"
+                        case 'bandstop'
                             f_bands = [0 Wn(1) Wn(1) Wn(2) Wn(2) 1];
                             a_bands = [1 1 0 0 1 1];
                     end
